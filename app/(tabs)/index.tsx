@@ -1,154 +1,342 @@
 import { Ionicons } from '@expo/vector-icons';
-import React from 'react';
-import { FlatList, StyleSheet, Text, View } from 'react-native';
-import { ScreenContainer } from '@/components/ScreenContainer';
+import { router } from 'expo-router';
+import React, { useState } from 'react';
+import {
+  FlatList,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '@/context/AuthContext';
-import { colors, radius, spacing, typography } from '@/theme';
+import { ACTIVITIES, CATEGORY_COLOR, Activity } from '@/data/activities';
+import { colors, radius, shadows, spacing, typography } from '@/theme';
 import type { ActivityCategory } from '@/types';
 
-interface FeedActivity {
-  id: string;
-  title: string;
-  host: string;
-  category: ActivityCategory;
-  when: string;
-  location: string;
-  spotsLeft: number;
-}
+// ─── Constants ────────────────────────────────────────────────────────────────
 
-/** Placeholder feed data — replace with a real activities API. */
-const SAMPLE_FEED: FeedActivity[] = [
-  {
-    id: '1',
-    title: 'Ranked Valorant — need a fifth',
-    host: 'Marta',
-    category: 'gaming',
-    when: 'Tonight, 8:00 PM',
-    location: 'Online',
-    spotsLeft: 1,
-  },
-  {
-    id: '2',
-    title: 'Saturday morning 5-a-side football',
-    host: 'Kuba',
-    category: 'sports',
-    when: 'Sat, 10:00 AM',
-    location: 'Katowice, Park Śląski',
-    spotsLeft: 3,
-  },
-  {
-    id: '3',
-    title: 'Beginner-friendly bouldering session',
-    host: 'Ola',
-    category: 'fitness',
-    when: 'Sun, 5:00 PM',
-    location: 'Boulder Gym Center',
-    spotsLeft: 4,
-  },
-  {
-    id: '4',
-    title: 'Sunset trail run, ~8km easy pace',
-    host: 'Tomek',
-    category: 'outdoors',
-    when: 'Fri, 7:30 PM',
-    location: 'Dolina Trzech Stawów',
-    spotsLeft: 6,
-  },
+const CATEGORY_FILTER: { key: ActivityCategory | 'all'; label: string }[] = [
+  { key: 'all', label: 'All' },
+  { key: 'gaming', label: '🎮 Gaming' },
+  { key: 'sports', label: '⚽ Sports' },
+  { key: 'fitness', label: '🏋️ Fitness' },
+  { key: 'outdoors', label: '🥾 Outdoors' },
+  { key: 'social', label: '🎲 Social' },
 ];
 
 const CATEGORY_ICON: Record<ActivityCategory, keyof typeof Ionicons.glyphMap> = {
-  gaming: 'game-controller-outline',
-  sports: 'football-outline',
-  fitness: 'barbell-outline',
-  outdoors: 'trail-sign-outline',
-  social: 'people-outline',
+  gaming:   'game-controller',
+  sports:   'football',
+  fitness:  'barbell',
+  outdoors: 'trail-sign',
+  social:   'people',
 };
 
-function ActivityCard({ item }: { item: FeedActivity }) {
+// ─── Components ───────────────────────────────────────────────────────────────
+
+function ActivityCard({ item }: { item: Activity }) {
+  const catColor = CATEGORY_COLOR[item.category];
+  const host = item.members.find((m) => m.role === 'host');
+  const fillRatio = (item.totalSpots - item.spotsLeft) / item.totalSpots;
+  const isAlmostFull = item.spotsLeft <= 2;
+
   return (
-    <View style={styles.card}>
-      <View style={styles.cardIcon}>
-        <Ionicons
-          name={CATEGORY_ICON[item.category]}
-          size={22}
-          color={colors.primary}
-        />
-      </View>
-      <View style={styles.cardBody}>
-        <Text style={styles.cardTitle}>{item.title}</Text>
-        <Text style={styles.cardMeta}>
-          Hosted by {item.host} · {item.when}
-        </Text>
-        <View style={styles.cardFooter}>
-          <View style={styles.tag}>
-            <Ionicons name="location-outline" size={13} color={colors.textMuted} />
-            <Text style={styles.tagText}>{item.location}</Text>
+    <Pressable
+      onPress={() => router.push(`/activity/${item.id}`)}
+      style={({ pressed }) => [styles.card, pressed && styles.cardPressed, shadows.card]}
+      accessibilityRole="button"
+      accessibilityLabel={`${item.title}, hosted by ${host?.name ?? ''}`}
+    >
+      {/* Category accent strip */}
+      <View style={[styles.cardAccent, { backgroundColor: catColor }]} />
+
+      <View style={styles.cardInner}>
+        {/* Header row */}
+        <View style={styles.cardHeader}>
+          <View style={[styles.catChip, { backgroundColor: `${catColor}22` }]}>
+            <Ionicons name={CATEGORY_ICON[item.category]} size={13} color={catColor} />
+            <Text style={[styles.catChipText, { color: catColor }]}>
+              {item.category.charAt(0).toUpperCase() + item.category.slice(1)}
+            </Text>
           </View>
-          <Text style={styles.spots}>{item.spotsLeft} spots left</Text>
+          {isAlmostFull && (
+            <View style={styles.urgencyBadge}>
+              <Text style={styles.urgencyText}>🔥 {item.spotsLeft} left</Text>
+            </View>
+          )}
+        </View>
+
+        {/* Title */}
+        <Text style={styles.cardTitle} numberOfLines={2}>{item.title}</Text>
+
+        {/* Meta row */}
+        <View style={styles.metaRow}>
+          <Ionicons name="time-outline" size={13} color={colors.textMuted} />
+          <Text style={styles.metaText}>{item.when}</Text>
+          <View style={styles.dot} />
+          <Ionicons
+            name={item.isOnline ? 'globe-outline' : 'location-outline'}
+            size={13}
+            color={colors.textMuted}
+          />
+          <Text style={styles.metaText} numberOfLines={1}>{item.location}</Text>
+        </View>
+
+        {/* Footer */}
+        <View style={styles.cardFooter}>
+          {/* Host */}
+          <View style={styles.hostRow}>
+            <View style={[styles.hostAvatar, { backgroundColor: `${catColor}33` }]}>
+              <Text style={[styles.hostInitials, { color: catColor }]}>
+                {host?.initials ?? '?'}
+              </Text>
+            </View>
+            <Text style={styles.hostName}>{host?.name ?? ''}</Text>
+          </View>
+
+          {/* Spots progress */}
+          <View style={styles.spotsGroup}>
+            <View style={styles.progressBg}>
+              <View
+                style={[
+                  styles.progressFill,
+                  {
+                    width: `${fillRatio * 100}%` as `${number}%`,
+                    backgroundColor: catColor,
+                  },
+                ]}
+              />
+            </View>
+            {!isAlmostFull && (
+              <Text style={styles.spotsText}>{item.spotsLeft} spots</Text>
+            )}
+          </View>
         </View>
       </View>
-    </View>
+    </Pressable>
   );
 }
 
+function CategoryPill({
+  item,
+  active,
+  onPress,
+}: {
+  item: typeof CATEGORY_FILTER[0];
+  active: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      style={[styles.pill, active && styles.pillActive]}
+    >
+      <Text style={[styles.pillText, active && styles.pillTextActive]}>
+        {item.label}
+      </Text>
+    </Pressable>
+  );
+}
+
+// ─── Screen ───────────────────────────────────────────────────────────────────
+
 export default function FeedScreen() {
   const { user } = useAuth();
+  const insets = useSafeAreaInsets();
   const firstName = user?.name.split(' ')[0] ?? 'there';
+  const [activeFilter, setActiveFilter] = useState<ActivityCategory | 'all'>('all');
+
+  const filtered = activeFilter === 'all'
+    ? ACTIVITIES
+    : ACTIVITIES.filter((a) => a.category === activeFilter);
 
   return (
-    <ScreenContainer contentStyle={styles.container}>
+    <View style={[styles.screen, { paddingTop: insets.top }]}>
+      {/* ── Header ── */}
       <View style={styles.header}>
-        <Text style={styles.greeting}>Hi {firstName} 👋</Text>
-        <Text style={styles.subtitle}>Activities happening near you</Text>
+        <View>
+          <Text style={styles.greeting}>Hey {firstName} 👋</Text>
+          <Text style={styles.subtitle}>Find your next activity</Text>
+        </View>
+        <Pressable style={styles.notifBtn} accessibilityLabel="Notifications">
+          <Ionicons name="notifications-outline" size={22} color={colors.text} />
+        </Pressable>
       </View>
 
+      {/* ── Category filter pills ── */}
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.pillsContainer}
+        style={styles.pillsScroll}
+      >
+        {CATEGORY_FILTER.map((item) => (
+          <CategoryPill
+            key={item.key}
+            item={item}
+            active={activeFilter === item.key}
+            onPress={() => setActiveFilter(item.key)}
+          />
+        ))}
+      </ScrollView>
+
+      {/* ── Feed ── */}
       <FlatList
-        data={SAMPLE_FEED}
+        data={filtered}
         keyExtractor={(item) => item.id}
         renderItem={({ item }) => <ActivityCard item={item} />}
         ItemSeparatorComponent={() => <View style={{ height: spacing.md }} />}
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.list}
+        contentContainerStyle={[
+          styles.list,
+          { paddingBottom: insets.bottom + 100 },
+        ]}
       />
-    </ScreenContainer>
+    </View>
   );
 }
 
+// ─── Styles ───────────────────────────────────────────────────────────────────
+
 const styles = StyleSheet.create({
-  container: { paddingBottom: 0 },
-  header: { marginBottom: spacing.lg },
-  greeting: { ...typography.title, color: colors.text },
-  subtitle: { ...typography.body, color: colors.textMuted, marginTop: spacing.xs },
-  list: { paddingBottom: spacing.xl },
-  card: {
+  screen: { flex: 1, backgroundColor: colors.background },
+
+  // Header
+  header: {
     flexDirection: 'row',
-    backgroundColor: colors.surface,
-    borderRadius: radius.lg,
-    padding: spacing.md,
-    gap: spacing.md,
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.sm,
   },
-  cardIcon: {
-    width: 44,
-    height: 44,
-    borderRadius: radius.md,
-    backgroundColor: colors.surfaceAlt,
+  greeting: { ...typography.title, color: colors.text },
+  subtitle: { ...typography.body, color: colors.textSecondary, marginTop: 2 },
+  notifBtn: {
+    width: 42,
+    height: 42,
+    borderRadius: radius.pill,
+    backgroundColor: colors.surface,
     alignItems: 'center',
     justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: colors.border,
   },
-  cardBody: { flex: 1 },
-  cardTitle: { ...typography.subheading, color: colors.text },
-  cardMeta: {
+
+  // Pills
+  pillsScroll: { flexGrow: 0, marginBottom: spacing.md },
+  pillsContainer: {
+    paddingHorizontal: spacing.lg,
+    gap: spacing.sm,
+  },
+  pill: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs + 2,
+    borderRadius: radius.pill,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  pillActive: {
+    backgroundColor: colors.primaryGlow,
+    borderColor: colors.primary,
+  },
+  pillText: { ...typography.captionSemi, color: colors.textSecondary },
+  pillTextActive: { color: colors.primary },
+
+  // List
+  list: { paddingHorizontal: spacing.lg, paddingTop: spacing.xs },
+
+  // Card
+  card: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.xl,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: colors.border,
+    flexDirection: 'row',
+  },
+  cardPressed: { opacity: 0.88, transform: [{ scale: 0.99 }] },
+  cardAccent: {
+    width: 4,
+    borderTopLeftRadius: radius.xl,
+    borderBottomLeftRadius: radius.xl,
+  },
+  cardInner: {
+    flex: 1,
+    padding: spacing.md,
+    gap: spacing.sm,
+  },
+  cardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  catChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 3,
+    borderRadius: radius.pill,
+  },
+  catChipText: { ...typography.micro, fontWeight: '600' },
+  urgencyBadge: {
+    backgroundColor: 'rgba(251,146,60,0.15)',
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 3,
+    borderRadius: radius.pill,
+  },
+  urgencyText: { ...typography.micro, color: colors.fitness, fontWeight: '700' },
+  cardTitle: {
+    ...typography.subheading,
+    color: colors.text,
+    lineHeight: 22,
+  },
+  metaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    flexWrap: 'nowrap',
+  },
+  metaText: {
     ...typography.caption,
     color: colors.textMuted,
-    marginTop: 2,
+    flexShrink: 1,
+  },
+  dot: {
+    width: 3,
+    height: 3,
+    borderRadius: 2,
+    backgroundColor: colors.border,
+    marginHorizontal: 2,
   },
   cardFooter: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginTop: spacing.sm,
+    marginTop: spacing.xs,
   },
-  tag: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  tagText: { ...typography.caption, color: colors.textMuted },
-  spots: { ...typography.caption, color: colors.primary, fontWeight: '700' },
+  hostRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
+  hostAvatar: {
+    width: 24,
+    height: 24,
+    borderRadius: radius.pill,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  hostInitials: { ...typography.micro, fontWeight: '700' },
+  hostName: { ...typography.caption, color: colors.textSecondary },
+  spotsGroup: { alignItems: 'flex-end', gap: 4 },
+  progressBg: {
+    width: 64,
+    height: 4,
+    borderRadius: radius.pill,
+    backgroundColor: colors.surfaceAlt,
+    overflow: 'hidden',
+  },
+  progressFill: { height: '100%', borderRadius: radius.pill },
+  spotsText: { ...typography.micro, color: colors.textMuted },
 });

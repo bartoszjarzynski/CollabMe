@@ -3,27 +3,32 @@ import { StyleSheet, Text, View } from 'react-native';
 import { colors, radius, spacing, typography } from '@/theme';
 
 interface LogoProps {
-  /** Show the "CollabMe" wordmark next to the mark. */
   withWordmark?: boolean;
   size?: number;
 }
 
-/**
- * Simple text-based brand mark so the app has identity without binary
- * image assets. Swap for an <Image> once real art is available.
- */
-export function Logo({ withWordmark = true, size = 56 }: LogoProps) {
+export function Logo({ withWordmark = true, size = 44 }: LogoProps) {
   return (
     <View style={styles.row}>
       <View
         style={[
           styles.mark,
-          { width: size, height: size, borderRadius: size / 3 },
+          {
+            width: size,
+            height: size,
+            borderRadius: size * 0.28,
+          },
         ]}
       >
-        <Text style={[styles.markText, { fontSize: size * 0.5 }]}>C</Text>
+        {/* Two-letter mark communicates "connection" between people */}
+        <Text style={[styles.markText, { fontSize: size * 0.42 }]}>CM</Text>
       </View>
-      {withWordmark && <Text style={styles.wordmark}>CollabMe</Text>}
+      {withWordmark && (
+        <View>
+          <Text style={styles.wordmark}>Collab</Text>
+          <Text style={[styles.wordmark, styles.wordmarkAccent]}>Me</Text>
+        </View>
+      )}
     </View>
   );
 }
@@ -34,8 +39,19 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primary,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: radius.lg,
   },
-  markText: { color: colors.textInverse, fontWeight: '800' },
-  wordmark: { ...typography.heading, color: colors.text },
+  markText: {
+    color: colors.textInverse,
+    fontWeight: '800',
+    letterSpacing: -0.5,
+  },
+  wordmark: {
+    ...typography.heading,
+    color: colors.text,
+    lineHeight: 22,
+  },
+  wordmarkAccent: {
+    color: colors.primary,
+    lineHeight: 22,
+  },
 });

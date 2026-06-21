@@ -1,112 +1,103 @@
-/**
- * Authentication service.
- *
- * This is the single seam between the app and "the backend". Today it is
- * implemented on top of local device storage so the app is fully runnable
- * with zero external setup. When you are ready for a real backend, replace
- * the body of these functions with calls to Supabase / Firebase / your API
- * — the rest of the app (AuthContext, screens) never needs to change.
- */
-import type {
-  AuthSession,
-  LoginInput,
-  RegisterInput,
-  User,
-} from '@/types';
-import { StorageKeys, getItem, removeItem, setItem } from './storage';
+import type { ActivityCategory, AuthSession, LoginInput, RegisterInput, User } from '@/types';
+import { supabase } from './supabase';
 
-/** Internal record shape — includes the password, which never leaves storage. */
-interface StoredUser extends User {
-  password: string;
+function buildUser(
+  supabaseUser: { id: string; email?: string; created_at: string },
+  profile: { name: string; bio?: string | null; avatar_url?: string | null; interests?: string[] | null } | null
+) {
+  return {
+    id: supabaseUser.id,
+    email: supabaseUser.email!,
+    name: profile?.name ?? '',
+    bio: profile?.bio ?? undefined,
+    avatarUrl: profile?.avatar_url ?? undefined,
+    interests: (profile?.interests ?? []) as import('@/types').ActivityCategory[],
+    createdAt: supabaseUser.created_at,
+  };
 }
 
-/** Simulated network latency so loading states are visible during dev. */
-const FAKE_LATENCY_MS = 600;
-
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function makeId(): string {
-  return `usr_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-}
-
-function makeToken(userId: string): string {
-  return `tok_${userId}_${Math.random().toString(36).slice(2)}`;
-}
-
-/** Strip the password before exposing a user to the rest of the app. */
-function toPublicUser(stored: StoredUser): User {
-  const { password: _password, ...user } = stored;
-  return user;
-}
-
-async function readUsers(): Promise<StoredUser[]> {
-  return (await getItem<StoredUser[]>(StorageKeys.users)) ?? [];
-}
-
-async function writeUsers(users: StoredUser[]): Promise<void> {
-  await setItem(StorageKeys.users, users);
+async function fetchProfile(userId: string) {
+  const { data } = await supabase
+    .from('profiles')
+    .select('name, bio, avatar_url, interests')
+    .eq('id', userId)
+    .single();
+  return data;
 }
 
 export const authService = {
-  /** Register a new account and start a session. */
   async register(input: RegisterInput): Promise<AuthSession> {
-    await delay(FAKE_LATENCY_MS);
-
-    const email = input.email.trim().toLowerCase();
-    const users = await readUsers();
-
-    if (users.some((u) => u.email === email)) {
-      throw new Error('An account with this email already exists.');
-    }
-
-    const stored: StoredUser = {
-      id: makeId(),
-      name: input.name.trim(),
-      email,
+    const { data, error } = await supabase.auth.signUp({
+      email: input.email.trim().toLowerCase(),
       password: input.password,
-      interests: [],
-      createdAt: new Date().toISOString(),
-    };
+      options: { data: { name: input.name.trim() } },
+    });
+    if (error) throw new Error(error.message);
+    if (!data.user) throw new Error('Registration failed.');
 
-    await writeUsers([...users, stored]);
+    const profile = await fetchProfile(data.user.id);
 
-    const session: AuthSession = {
-      user: toPublicUser(stored),
-      token: makeToken(stored.id),
+    return {
+      user: buildUser(data.user, profile ?? { name: input.name.trim() }),
+      token: data.session?.access_token ?? '',
     };
-    await setItem(StorageKeys.session, session);
-    return session;
   },
 
-  /** Authenticate an existing account and start a session. */
   async login(input: LoginInput): Promise<AuthSession> {
-    await delay(FAKE_LATENCY_MS);
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email: input.email.trim().toLowerCase(),
+      password: input.password,
+    });
+    if (error) throw new Error(error.message);
+    if (!data.user) throw new Error('Login failed.');
 
-    const email = input.email.trim().toLowerCase();
-    const users = await readUsers();
-    const match = users.find((u) => u.email === email);
+    const profile = await fetchProfile(data.user.id);
 
-    if (!match || match.password !== input.password) {
-      throw new Error('Incorrect email or password.');
-    }
-
-    const session: AuthSession = {
-      user: toPublicUser(match),
-      token: makeToken(match.id),
+    return {
+      user: buildUser(data.user, profile),
+      token: data.session.access_token,
     };
-    await setItem(StorageKeys.session, session);
-    return session;
   },
 
-  /** Clear the active session. */
   async logout(): Promise<void> {
-    await removeItem(StorageKeys.session);
+    await supabase.auth.signOut();
   },
 
-  /** Restore a persisted session on app launch, if any. */
   async getSession(): Promise<AuthSession | null> {
-    return getItem<AuthSession>(StorageKeys.session);
+    const { data } = await supabase.auth.getSession();
+    if (!data.session) return null;
+
+    const { user, access_token } = data.session;
+    const profile = await fetchProfile(user.id);
+
+    return {
+      user: buildUser(user, profile),
+      token: access_token,
+    };
+  },
+
+  async updateProfile(updates: {
+    name?: string;
+    bio?: string;
+    interests?: ActivityCategory[];
+  }): Promise<User> {
+    const { data: sessionData } = await supabase.auth.getSession();
+    if (!sessionData.session) throw new Error('Not authenticated.');
+
+    const userId = sessionData.session.user.id;
+
+    const { error } = await supabase
+      .from('profiles')
+      .update({
+        ...(updates.name      !== undefined && { name:      updates.name }),
+        ...(updates.bio       !== undefined && { bio:       updates.bio }),
+        ...(updates.interests !== undefined && { interests: updates.interests }),
+      })
+      .eq('id', userId);
+
+    if (error) throw new Error(error.message);
+
+    const profile = await fetchProfile(userId);
+    return buildUser(sessionData.session.user, profile);
   },
 };

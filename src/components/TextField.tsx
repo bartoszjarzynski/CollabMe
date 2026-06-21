@@ -12,7 +12,6 @@ import { colors, radius, spacing, typography } from '@/theme';
 interface TextFieldProps extends TextInputProps {
   label: string;
   error?: string | null;
-  /** Renders a show/hide toggle and masks input. */
   secure?: boolean;
 }
 
@@ -49,7 +48,7 @@ export function TextField({
             accessibilityRole="button"
             accessibilityLabel={hidden ? 'Show password' : 'Hide password'}
             onPress={() => setHidden((h) => !h)}
-            hitSlop={8}
+            hitSlop={12}
           >
             <Text style={styles.toggle}>{hidden ? 'Show' : 'Hide'}</Text>
           </Pressable>
@@ -63,32 +62,35 @@ export function TextField({
 const styles = StyleSheet.create({
   wrapper: { marginBottom: spacing.md },
   label: {
-    ...typography.caption,
-    color: colors.textMuted,
+    ...typography.captionSemi,
+    color: colors.textSecondary,
     marginBottom: spacing.xs,
-    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
   field: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.surface,
-    borderRadius: radius.md,
+    backgroundColor: colors.surfaceAlt,
+    borderRadius: radius.lg,
     borderWidth: 1.5,
     borderColor: colors.border,
     paddingHorizontal: spacing.md,
   },
-  fieldFocused: { borderColor: colors.primary },
+  fieldFocused: {
+    borderColor: colors.borderFocus,
+    backgroundColor: colors.surface,
+  },
   fieldError: { borderColor: colors.danger },
   input: {
     flex: 1,
-    height: 52,
+    height: 54,
     ...typography.body,
     color: colors.text,
   },
   toggle: {
-    ...typography.caption,
+    ...typography.captionSemi,
     color: colors.primary,
-    fontWeight: '600',
   },
   error: {
     ...typography.caption,

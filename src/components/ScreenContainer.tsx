@@ -12,22 +12,26 @@ import { colors, spacing } from '@/theme';
 
 interface ScreenContainerProps {
   children: React.ReactNode;
-  /** Wrap content in a ScrollView (useful for forms). */
   scroll?: boolean;
   contentStyle?: ViewStyle;
+  /** Remove horizontal padding — useful for full-bleed layouts */
+  noPadding?: boolean;
 }
 
 export function ScreenContainer({
   children,
   scroll = false,
   contentStyle,
+  noPadding = false,
 }: ScreenContainerProps) {
   const inner = (
-    <View style={[styles.content, contentStyle]}>{children}</View>
+    <View style={[styles.content, noPadding && styles.noPadding, contentStyle]}>
+      {children}
+    </View>
   );
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
+    <SafeAreaView style={styles.safe} edges={['top']}>
       <KeyboardAvoidingView
         style={styles.flex}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -52,5 +56,6 @@ const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.background },
   flex: { flex: 1 },
   scroll: { flexGrow: 1 },
-  content: { flex: 1, padding: spacing.lg },
+  content: { flex: 1, paddingHorizontal: spacing.lg },
+  noPadding: { paddingHorizontal: 0 },
 });

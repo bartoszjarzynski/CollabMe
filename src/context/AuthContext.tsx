@@ -14,17 +14,19 @@ import React, {
   useState,
 } from 'react';
 import { authService } from '@/services/authService';
-import type { LoginInput, RegisterInput, User } from '@/types';
+import { supabase } from '@/services/supabase';
+import type { ActivityCategory, LoginInput, RegisterInput, User } from '@/types';
 
 interface AuthContextValue {
   user: User | null;
   /** True while restoring a persisted session on launch. */
   initializing: boolean;
-  /** True while a login/register/logout request is in flight. */
+  /** True while a login/register/logout/update request is in flight. */
   loading: boolean;
   register: (input: RegisterInput) => Promise<void>;
   login: (input: LoginInput) => Promise<void>;
   logout: () => Promise<void>;
+  updateProfile: (updates: { name?: string; bio?: string; interests?: ActivityCategory[] }) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -35,17 +37,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    let active = true;
-    (async () => {
-      const session = await authService.getSession();
-      if (active) {
-        setUser(session?.user ?? null);
-        setInitializing(false);
+    // Restore session on launch
+    authService.getSession().then((s) => {
+      setUser(s?.user ?? null);
+      setInitializing(false);
+    });
+
+    // Keep auth state in sync (token refresh, sign-out from another device, etc.)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      if (!session) {
+        setUser(null);
+        return;
       }
-    })();
-    return () => {
-      active = false;
-    };
+      const s = await authService.getSession();
+      setUser(s?.user ?? null);
+    });
+
+    return () => subscription.unsubscribe();
   }, []);
 
   const register = useCallback(async (input: RegisterInput) => {
@@ -78,9 +86,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
+  const updateProfile = useCallback(async (updates: {
+    name?: string;
+    bio?: string;
+    interests?: ActivityCategory[];
+  }) => {
+    setLoading(true);
+    try {
+      const updated = await authService.updateProfile(updates);
+      setUser(updated);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
   const value = useMemo<AuthContextValue>(
-    () => ({ user, initializing, loading, register, login, logout }),
-    [user, initializing, loading, register, login, logout]
+    () => ({ user, initializing, loading, register, login, logout, updateProfile }),
+    [user, initializing, loading, register, login, logout, updateProfile]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
